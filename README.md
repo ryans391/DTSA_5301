@@ -1,1 +1,2 @@
 # DTSA_5301
+This project contains two .RMD files that are part of the DTSA 5301 file.  The COVID19.RMD is based on the John Hopkins COVID-19 data and seeks to explore various territories performed during the COVID-19 pandemic (with respect to total cases and deaths).  The NYPD-Shooting-Incidents.RMD evaluates trends in shooting incidents in New York City and makes suggestions for policy that may address some of the identified trends.
