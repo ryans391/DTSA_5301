@@ -1,0 +1,232 @@
+---
+title: "NYPD Evaluation"
+author: "Ryan Smith"
+date: "2024-10-29"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+NYPD Shooting Incident (Historic) Analysis
+
+The data contains information about every shooting incident that occurred in New York City from 2006 through the previous calendar year.  The dataset includes pertinent information such as location, time of the shooting, victim demographics, and shooter demographics.
+
+Questions to Answer: 
+-Which boroughs are hotspots for shootings?
+-How have the number of shootings trended throughout the years?
+-At what time do most shootings occur?
+
+
+#Pulling the NYPD Shooting Incident Data into a Dataframe, df, for use.
+```{r}
+library(lubridate)
+library(tidyverse)
+library(tinytex)
+library(ggplot2)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+df <- read_csv(url_in)
+
+```
+To answer the three questions I posed, I want to focus on spatial and temporal data to evaluate shooting trends.  Therefore, I will remove columns that are related to suspect/victim demographics, jurisdiction and incident information, and location info that contains a lot of NA's.
+```{r}
+
+df <- df %>%
+  select(-c(INCIDENT_KEY, PERP_AGE_GROUP, JURISDICTION_CODE, 
+            PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE, 
+            LOC_OF_OCCUR_DESC, LOC_CLASSFCTN_DESC, STATISTICAL_MURDER_FLAG, 
+            LOCATION_DESC, X_COORD_CD, Y_COORD_CD, Lon_Lat))
+
+df
+         
+
+```
+
+
+##Evaluating the frequency of shootings in each borough.
+```{r}
+#Arranging the number of total shooting incidents by borough
+location_trends <- df %>%
+  group_by(BORO) %>%
+  summarise(Incidents = n()) %>%
+  arrange(BORO) %>%
+  mutate(Percentage = (Incidents / sum(Incidents)) * 100) #creating a new row for percentage of shooting incidents for each borough
+
+location_trends
+
+```
+##Visualizing where the most shootings happen
+```{r}
+  
+#Create pie Chart for the location data
+ggplot(location_trends, aes(x = "", y = Incidents, fill = BORO)) +
+  geom_bar(stat = "Identity", width = 1) +
+  coord_polar("y", start = 0) +
+  geom_text(aes(label = paste(round(Percentage, 1), "%")),
+            position = position_stack(vjust = 0.6)) +
+  labs(title = "Shooting Incidents by Borough",
+       fill = "Borough") + 
+  theme_void()
+
+```
+#
+
+
+##Evaluating yearly trends
+```{r}
+#Converting the OCCUR_Date from char to m/d/y date format.
+
+df$OCCUR_DATE <- as.Date(df$OCCUR_DATE, format = "%m/%d/%Y")
+df$Year <- as.numeric(format(df$OCCUR_DATE, "%Y"))
+          
+#Creating a dataframe that is sorted by year with totalized incident data.
+yearly_trends <- df %>%
+  group_by(Year) %>%
+  summarise(Incidents = n()) %>%
+  arrange(Year)
+
+yearly_trends
+
+```
+
+##Visualizing Yearly Trends
+```{r}
+# Plotting the yearly trends
+ggplot(data = yearly_trends, aes(x = as.integer(Year), y = Incidents)) +
+  geom_line(color = "red") +
+  geom_point(color = "blue") +
+  labs(title = "Annual Shooting Incidents in NYC",
+       x = "Year",
+       y = "Number of Incidents per Year") +
+    scale_x_continuous(
+    breaks = seq(min(yearly_trends$Year), max(yearly_trends$Year), by = 2)) +
+  scale_y_continuous(limits = c(0, NA))
+
+```
+It appears that there was a steady downtrend of shooting incidents from 2006 through 2019.  There was a large jump in shooting incidents in 2020 (notably during the height of the COVID pandemic) with a rapid decrease in incidents from 2020 to 2023.
+
+
+##Evaluating at what time most shootings occur
+```{r}
+#Adjusting time variable from numeric to time-based variable type
+df$OCCUR_TIME <- as.POSIXct(df$OCCUR_TIME, format = "%H:%M:%S")
+
+#Creating time bins that the time data can fall in
+df$time_range <- cut(
+  as.numeric(format(df$OCCUR_TIME, "%H")),
+  breaks = c(-1, 3, 6, 9, 12, 15, 18, 21, 24),
+  labels = c("12 AM-3 AM", "3 AM-6 AM", "6 AM-9 AM", "9 AM-12 PM",
+             "12 PM-3 PM", "3 PM-6 PM", "6 PM-9 PM", "9 PM-12 AM"),
+  right = FALSE
+)
+
+# Grouping data by the aforementioned time ranges and summing incidents for each time range
+time_range_count <- df %>%
+  group_by(time_range) %>%
+  summarise(Incidents = n()) %>%
+  filter(!is.na(time_range))  
+
+time_range_count
+
+
+```
+
+##Visualzing when most shootings occur
+```{r}
+# Plotting the distribution of times
+ggplot(time_range_count, aes(x = time_range, y = Incidents, fill = time_range)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribution of Shooting Incidents by Time of Day in NYC",
+       x = "Time of Day",
+       y = "Number of Shooting Incidents") +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) 
+```
+#It appears that most shootings occur between the time range of 9PM-12AM and is followed closely by the 12AM-3AM time range. 
+
+
+##Model Analysis - Poverty vs. Shootings
+
+I want to evaluate the role that poverty may play in the number of shootings in New York City.  
+Uploading the estimated percent of people of all ages in poverty in New York County, NY provided by the Federal Reserve Bank of St. Louis.
+```{r}
+
+url_in2 <- "https://fred.stlouisfed.org/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1320&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=PPAANY36061A156NCEN&scale=left&cosd=1989-01-01&coed=2022-01-01&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Annual&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2024-11-01&revision_date=2024-11-01&nd=1989-01-01"
+
+poverty_df <- read_csv(url_in2)
+poverty_df
+
+
+
+```
+
+#Tidying the poverty dataset and merging it with our yearly shooting trends data.
+```{r}
+poverty_df$Year <- as.numeric(format(poverty_df$DATE, "%Y"))
+
+poverty_df <- poverty_df %>%
+  select(-DATE)
+
+poverty_df$PPAANY36061A156NCEN <- as.numeric(poverty_df$PPAANY36061A156NCEN)
+
+poverty_df <- poverty_df %>% 
+  rename(Poverty_Percentage = PPAANY36061A156NCEN)
+
+
+
+poverty_df
+
+merged_df <- na.omit(full_join(yearly_trends, poverty_df))
+merged_df
+
+```
+#Visualizing the merged data
+```{r}
+
+ggplot(merged_df, aes(x = Year)) +
+  geom_line(aes(y = Incidents, color = "Incidents"), size = 1.2) +
+  geom_line(aes(y = Poverty_Percentage * max(Incidents) / (max(Poverty_Percentage)), color = "Poverty Percentage"), size = 1.2) +
+  scale_y_continuous(
+    name = "Number of Incidents",
+    sec.axis = sec_axis(~ . * max(merged_df$Poverty_Percentage) / max(merged_df$Incidents), name = "Poverty Percentage (%)")) +
+  scale_color_manual(
+    values = c("Incidents" = "blue", "Poverty Percentage" = "red")
+  ) +
+  labs(
+    title = "Trends in Shooting Incidents and Poverty Percentage Over Time",
+    x = "Year",
+    color = "Metric")
+
+```
+While not a perfect match, the drop in poverty that we see in the mid-2010's and the corresponding jump during the COVID pandemic appear to show similarities to the number of shooting incidents during this timeframe.
+
+#Conducting a regression analysis to identify if poverty in New York County is statistically significant to the number of shootings.
+
+```{r}
+
+model <- lm(Incidents ~ Poverty_Percentage, data = merged_df)
+summary(model)
+
+```
+While the p-value of .0568 does not meet the conventional .05 level of significance, it is very close to it and indicates marginal significance.  This relationship warrants further analysis into local socioeconomic factors with an expanded dataset.     
+
+###Conclusion
+
+I evaluated the number of shooting incidents in each borough and found Brooklyn and the Bronx to have the highest number of shootings, respectively.  Additional analysis could be completed to evaluate shootings per capita or evaluate socioeconomic factors in each borough, such as: unemployment, poverty level (on a localized basis), or education/quality of schools. However, this data could be utilized to help allocate police resources at the city-level.
+
+The number of shootings at different times of the day was evaluated.  The analysis indicates most shootings occur between the hours 9pm and 3am with a steep drop off during daytime hours.  Therefore, tourists and residents should be encouraged to do their traveling during normal daytime and evening hours and avoid late night traveling, if possible.
+
+I also evaluated how the number of shooting incidents is trending over time.  The overall trend is down, however, there was a pronounced spike in shootings in 2020, which coincided with the COVID pandemic.  This pronounced increase led me to consider what variables could help explain the rise in shootings, so I decided to bring in additional data and conduct a regression analysis between the number of shootings and the poverty level in New York County.  The analysis yielded marginal significance and warrants further examination into the impact of socioeconomic factors on shooting incidents and violent crime.
+
+###Bias
+
+I removed victim and perpetrator demographic information to help alleviate potential sources of bias within the dataset and focused my analysis on spatial and temporal data.  With that being said, my choice to analyze how poverty impacts the frequency of shootings is based on a more liberal interpretation of how violent crime may be related to lack of economic opportunity.
+
+```{r}
+sessionInfo()
+```
+
